@@ -1,0 +1,406 @@
+import discord
+from discord.ext import commands
+import asyncio
+import re
+import os
+from dotenv import load_dotenv
+import logging
+from copy_trader import HyperliquidTrader
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG,  # Changed to DEBUG for troubleshooting
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('discord_trader.log'),
+        logging.StreamHandler()
+    ]
+)
+
+class DiscordTraderBot:
+    def __init__(self):
+        # Initialize the Hyperliquid trader
+        self.trader = HyperliquidTrader()
+        
+        # Discord bot configuration
+        intents = discord.Intents.default()
+        intents.message_content = True
+        self.bot = commands.Bot(command_prefix='!', intents=intents)
+        
+        # Configuration
+        self.config = {
+            'discord_token': os.getenv('DISCORD_BOT_TOKEN'),
+            'channel_id': int(os.getenv('TRADING_CHANNEL_ID')) if os.getenv('TRADING_CHANNEL_ID') else None,
+            'trader_user_id': int(os.getenv('TRADER_USER_ID')) if os.getenv('TRADER_USER_ID') else None,
+            'auto_execute': os.getenv('AUTO_EXECUTE', 'false').lower() == 'true'
+        }
+        
+        # Setup bot events
+        self.setup_bot_events()
+    
+    def setup_bot_events(self):
+        @self.bot.event
+        async def on_ready():
+            logging.info(f'{self.bot.user} has connected to Discord!')
+            
+        @self.bot.event
+        async def on_message(message):
+            try:
+                # Don't respond to bot messages
+                if message.author.bot:
+                    return
+                
+                # Log all messages for debugging (only in specified channel)
+                if self.config['channel_id'] and message.channel.id == self.config['channel_id']:
+                    logging.debug(f"Channel message from {message.author.display_name}: {message.content}")
+                
+                # Check if message is from the specified channel
+                if self.config['channel_id'] and message.channel.id != self.config['channel_id']:
+                    return
+                
+                # Check if message is from the specified trader
+                if self.config['trader_user_id'] and message.author.id != self.config['trader_user_id']:
+                    logging.debug(f"Ignoring message from {message.author.display_name} (not target trader)")
+                    return
+                
+                # Parse the message for trade signals
+                signal = self.parse_trade_message(message.content)
+                
+                # If no signal found, try parsing multi-line format
+                if not signal:
+                    signal = self.parse_multiline_signal(message.content)
+                
+                if signal:
+                    logging.info(f"✅ Trade signal detected from {message.author.display_name}: {signal}")
+                    
+                    if self.config['auto_execute']:
+                        # Auto-execute the trade
+                        try:
+                            success = self.trader.receive_trade_signal(signal)
+                            if success:
+                                await message.add_reaction('✅')
+                                await message.reply(f"✅ Trade executed: {signal['action']} {signal['symbol']} at ${signal['price']}")
+                            else:
+                                await message.add_reaction('❌')
+                                await message.reply("❌ Failed to execute trade")
+                        except Exception as e:
+                            logging.error(f"Error executing trade: {str(e)}")
+                            await message.add_reaction('❌')
+                            await message.reply(f"❌ Error: {str(e)}")
+                    else:
+                        # Ask for confirmation
+                        await message.add_reaction('🤔')
+                        confirmation_msg = await message.reply(
+                            f"📊 **Trade Signal Detected**\n"
+                            f"Action: {signal['action']}\n"
+                            f"Symbol: {signal['symbol']}\n"
+                            f"Price: ${signal['price']}\n"
+                            f"Leverage: {signal.get('leverage', 'default')}\n\n"
+                            f"React with ✅ to execute or ❌ to ignore"
+                        )
+                        await confirmation_msg.add_reaction('✅')
+                        await confirmation_msg.add_reaction('❌')
+                else:
+                    # Log messages that weren't recognized as signals
+                    if len(message.content) > 10:  # Only log substantial messages
+                        logging.debug(f"❌ No signal detected in: '{message.content}'")
+                
+                # Process commands
+                await self.bot.process_commands(message)
+                
+            except Exception as e:
+                logging.error(f"Error processing message: {str(e)}")
+                try:
+                    await message.add_reaction('⚠️')
+                except:
+                    pass
+        
+        @self.bot.event
+        async def on_reaction_add(reaction, user):
+            # Don't respond to bot reactions
+            if user.bot:
+                return
+            
+            # Check if it's a confirmation reaction
+            if reaction.emoji == '✅' and "Trade Signal Detected" in reaction.message.content:
+                # Extract signal from the message
+                signal = self.extract_signal_from_confirmation(reaction.message.content)
+                if signal:
+                    success = self.trader.receive_trade_signal(signal)
+                    if success:
+                        await reaction.message.edit(content=reaction.message.content + "\n\n✅ **EXECUTED**")
+                    else:
+                        await reaction.message.edit(content=reaction.message.content + "\n\n❌ **FAILED**")
+            
+            elif reaction.emoji == '❌' and "Trade Signal Detected" in reaction.message.content:
+                await reaction.message.edit(content=reaction.message.content + "\n\n❌ **IGNORED**")
+    
+    def parse_trade_message(self, message_content: str) -> dict:
+        """Parse Discord message to extract trade signals"""
+        message = message_content.upper()
+        
+        # Common trading signal patterns
+        patterns = [
+            # Pattern 1: "BUY BTC AT 50000" or "SELL ETH @ 3000"
+            r'(BUY|SELL|LONG|SHORT)\s+(\w+)\s+(?:AT|@)\s*\$?(\d+(?:\.\d+)?)',
+            
+            # Pattern 2: "BTC BUY 50000" or "ETH LONG $3000"  
+            r'(\w+)\s+(BUY|SELL|LONG|SHORT)\s+\$?(\d+(?:\.\d+)?)',
+            
+            # Pattern 3: "🚀 BTC LONG ENTRY: $50000"
+            r'(?:🚀|📈|📊)?\s*(\w+)\s+(LONG|SHORT|BUY|SELL)\s+(?:ENTRY:?)?\s*\$?(\d+(?:\.\d+)?)',
+            
+            # Pattern 4: "SIGNAL: BUY BTC $50000"
+            r'SIGNAL:?\s+(BUY|SELL|LONG|SHORT)\s+(\w+)\s*\$?(\d+(?:\.\d+)?)',
+            
+            # Pattern 5: "SHORT SOL 150" or "LONG BTC 50000"
+            r'(LONG|SHORT)\s+(\w+)\s+(\d+(?:\.\d+)?)',
+            
+            # Pattern 6: "SELL ETHEREUM 3000"
+            r'(BUY|SELL)\s+(\w+)\s+(\d+(?:\.\d+)?)',
+            
+            # Pattern 7: Handle "50k", "3k" etc.
+            r'(BUY|SELL|LONG|SHORT)\s+(\w+)\s+(?:AT|@)?\s*\$?(\d+(?:\.\d+)?)[KkMm]?',
+            
+            # Pattern 8: "Position: LONG BTC ENTRY $50000"
+            r'POSITION:?\s+(LONG|SHORT)\s+(\w+)\s+(?:ENTRY:?)?\s*\$?(\d+(?:\.\d+)?)',
+        ]
+        
+        for pattern in patterns:
+            match = re.search(pattern, message)
+            if match:
+                groups = match.groups()
+                
+                # Determine action and symbol based on pattern
+                if len(groups) == 3:
+                    if groups[0] in ['BUY', 'SELL', 'LONG', 'SHORT']:
+                        action, symbol, price = groups
+                    else:
+                        symbol, action, price = groups
+                else:
+                    continue
+                
+                # Normalize action
+                if action in ['LONG', 'BUY']:
+                    action = 'BUY'
+                elif action in ['SHORT', 'SELL']:
+                    action = 'SELL'
+                
+                # Handle price multipliers (K, M)
+                price_str = price
+                if message.find(price + 'K') != -1:
+                    price = str(float(price) * 1000)
+                elif message.find(price + 'M') != -1:
+                    price = str(float(price) * 1000000)
+                
+                # Extract leverage if mentioned
+                leverage_match = re.search(r'(\d+)X|LEVERAGE[:\s]*(\d+)', message)
+                leverage = '2.0'  # default
+                if leverage_match:
+                    leverage = leverage_match.group(1) or leverage_match.group(2)
+                
+                return {
+                    'action': action,
+                    'symbol': symbol,
+                    'price': price,
+                    'leverage': leverage
+                }
+        
+        return None
+    
+    def parse_multiline_signal(self, message_content: str) -> dict:
+        """Parse multi-line trading signals like:
+        Limit Long BTC: 117320
+        Stop Loss: 116690
+        TP: 118900
+        """
+        lines = message_content.strip().split('\n')
+        if len(lines) < 2:
+            return None
+        
+        signal = {}
+        
+        # Parse each line
+        for line in lines:
+            line = line.strip().upper()
+            
+            # Main signal line patterns
+            if any(word in line for word in ['LIMIT', 'MARKET']) and any(word in line for word in ['LONG', 'SHORT', 'BUY', 'SELL']):
+                # "Limit Long BTC: 117320" or "Market Buy ETH: 3200"
+                match = re.search(r'(?:LIMIT|MARKET)?\s*(LONG|SHORT|BUY|SELL)\s+(\w+)[:,]?\s*(\d+(?:\.\d+)?)', line)
+                if match:
+                    action, symbol, price = match.groups()
+                    
+                    # Normalize action
+                    if action in ['LONG', 'BUY']:
+                        signal['action'] = 'BUY'
+                    elif action in ['SHORT', 'SELL']:
+                        signal['action'] = 'SELL'
+                    
+                    signal['symbol'] = symbol
+                    signal['price'] = price
+            
+            # Alternative main signal patterns
+            elif ':' in line and any(word in line for word in ['LONG', 'SHORT', 'BUY', 'SELL']):
+                # "BTC LONG: 117320" or "ETH BUY: 3200" or "Short SOL: 150"
+                patterns = [
+                    r'(\w+)\s+(LONG|SHORT|BUY|SELL)[:,]\s*(\d+(?:\.\d+)?)',
+                    r'(LONG|SHORT|BUY|SELL)\s+(\w+)[:,]\s*(\d+(?:\.\d+)?)'
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, line)
+                    if match:
+                        groups = match.groups()
+                        if len(groups) == 3:
+                            if groups[0] in ['LONG', 'SHORT', 'BUY', 'SELL']:
+                                action, symbol, price = groups
+                            else:
+                                symbol, action, price = groups
+                            
+                            # Normalize action
+                            if action in ['LONG', 'BUY']:
+                                signal['action'] = 'BUY'
+                            elif action in ['SHORT', 'SELL']:
+                                signal['action'] = 'SELL'
+                            
+                            signal['symbol'] = symbol
+                            signal['price'] = price
+                            break
+            
+            # Stop loss line - multiple patterns
+            elif any(phrase in line for phrase in ['STOP LOSS', 'STOP:', 'SL:']):
+                match = re.search(r'(\d+(?:\.\d+)?)', line)
+                if match:
+                    signal['stop_loss'] = match.group(1)
+            
+            # Take profit line - multiple patterns  
+            elif any(word in line for word in ['TP:', 'TAKE PROFIT', 'TARGET:', 'PROFIT:']):
+                match = re.search(r'(\d+(?:\.\d+)?)', line)
+                if match:
+                    signal['take_profit'] = match.group(1)
+            
+            # Leverage line
+            elif any(word in line for word in ['LEVERAGE', 'LEV']):
+                match = re.search(r'(\d+)X?', line)
+                if match:
+                    signal['leverage'] = match.group(1)
+        
+        # Return signal only if we have the minimum required fields
+        if 'action' in signal and 'symbol' in signal and 'price' in signal:
+            # Set default leverage if not specified
+            if 'leverage' not in signal:
+                signal['leverage'] = '2.0'
+            
+            logging.info(f"Multi-line signal parsed: {signal}")
+            return signal
+        
+        return None
+    
+    def extract_signal_from_confirmation(self, message_content: str) -> dict:
+        """Extract signal from confirmation message"""
+        lines = message_content.split('\n')
+        signal = {}
+        
+        for line in lines:
+            if line.startswith('Action:'):
+                signal['action'] = line.split(':')[1].strip()
+            elif line.startswith('Symbol:'):
+                signal['symbol'] = line.split(':')[1].strip()
+            elif line.startswith('Price:'):
+                price = line.split(':')[1].strip().replace('$', '')
+                signal['price'] = price
+            elif line.startswith('Leverage:'):
+                leverage = line.split(':')[1].strip()
+                if leverage != 'default':
+                    signal['leverage'] = leverage
+        
+        return signal if len(signal) >= 3 else None
+    
+    @commands.command(name='status')
+    async def status_command(self, ctx):
+        """Check bot and trader status"""
+        active_trades = len(self.trader.active_trades)
+        trading_enabled = self.trader.contracts_loaded
+        
+        embed = discord.Embed(
+            title="🤖 Copy Trader Status",
+            color=0x00ff00 if trading_enabled else 0xff9900
+        )
+        embed.add_field(name="Trading Mode", value="🟢 Live Trading" if trading_enabled else "🟡 Testing Mode", inline=True)
+        embed.add_field(name="Active Trades", value=str(active_trades), inline=True)
+        embed.add_field(name="Auto Execute", value="✅" if self.config['auto_execute'] else "❌", inline=True)
+        
+        if not trading_enabled:
+            embed.add_field(
+                name="⚠️ Notice", 
+                value="Bot is in testing mode. Signals will be detected but not executed. Configure contract addresses to enable trading.", 
+                inline=False
+            )
+        
+        if self.trader.active_trades:
+            trades_info = ""
+            for symbol, trade in self.trader.active_trades.items():
+                trades_info += f"{symbol}: ${trade['entry_price']}\n"
+            embed.add_field(name="Positions", value=trades_info, inline=False)
+        
+        await ctx.send(embed=embed)
+    
+    @commands.command(name='toggle_auto')
+    async def toggle_auto_execute(self, ctx):
+        """Toggle auto-execution of trades"""
+        self.config['auto_execute'] = not self.config['auto_execute']
+        status = "enabled" if self.config['auto_execute'] else "disabled"
+        await ctx.send(f"🔄 Auto-execution {status}")
+    
+    @commands.command(name='close')
+    async def close_position(self, ctx, symbol: str, price: float):
+        """Manually close a position"""
+        if symbol.upper() in self.trader.active_trades:
+            signal = {
+                'action': 'SELL',
+                'symbol': symbol.upper(),
+                'price': str(price)
+            }
+            success = self.trader.receive_trade_signal(signal)
+            if success:
+                await ctx.send(f"✅ Closed {symbol} position at ${price}")
+            else:
+                await ctx.send(f"❌ Failed to close {symbol} position")
+        else:
+            await ctx.send(f"❌ No active position for {symbol}")
+    
+    def run(self):
+        """Start the Discord bot"""
+        if not self.config['discord_token']:
+            logging.error("Discord bot token not found in environment variables")
+            return
+        
+        logging.info("Starting Discord trader bot...")
+        self.bot.run(self.config['discord_token'])
+
+def main():
+    # Start the Discord bot
+    discord_bot = DiscordTraderBot()
+    
+    # Start position monitoring in background
+    async def monitor_positions():
+        while True:
+            discord_bot.trader.check_positions()
+            await asyncio.sleep(60)  # Check every minute
+    
+    # Run both the Discord bot and position monitoring
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Start position monitoring task
+    loop.create_task(monitor_positions())
+    
+    # Start Discord bot
+    discord_bot.run()
+
+if __name__ == "__main__":
+    main()

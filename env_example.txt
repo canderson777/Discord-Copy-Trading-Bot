@@ -1,0 +1,48 @@
+# Copy this file to .env and fill in your actual values
+# DO NOT share your .env file - it contains sensitive information!
+
+# =================================================================
+# REQUIRED: Blockchain Configuration
+# =================================================================
+# Get a free RPC from Alchemy, Infura, or use public endpoint
+ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc
+
+# Your wallet's private key (64 hex characters, with or without 0x prefix)
+# Example: PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
+# WARNING: Never share this! Anyone with this key can access your funds!
+PRIVATE_KEY=your_64_character_hex_private_key_here
+
+# =================================================================
+# REQUIRED: Discord Bot Configuration  
+# =================================================================
+# Get this from Discord Developer Portal after creating a bot
+DISCORD_BOT_TOKEN=your_discord_bot_token_here
+
+# =================================================================
+# OPTIONAL: Hyperliquid Contract Addresses
+# =================================================================
+# These are needed for actual trading - get from Hyperliquid docs
+# Leave empty for testing configuration
+CLEARINGHOUSE_ADDRESS=
+EXCHANGE_ADDRESS=
+USDC_ADDRESS=
+
+# =================================================================
+# OPTIONAL: Discord Settings
+# =================================================================
+# Right-click channel in Discord (Developer Mode enabled) -> Copy ID
+TRADING_CHANNEL_ID=
+
+# Right-click user profile in Discord -> Copy ID  
+TRADER_USER_ID=
+
+# Set to true only after testing with false!
+AUTO_EXECUTE=false
+
+# =================================================================
+# OPTIONAL: Trading Configuration
+# =================================================================
+MAX_POSITION_SIZE=0.1
+LEVERAGE=2.0
+MIN_PROFIT_THRESHOLD=0.02
+STOP_LOSS_PERCENTAGE=0.05
