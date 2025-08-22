@@ -15,7 +15,7 @@ An advanced Discord bot that automatically detects and executes cryptocurrency t
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/discord-copy-trader-bot.git
+git clone https://github.com/canderson777/Discord-Copy-Trader-Bot.git
 cd discord-copy-trader-bot
 ```
 
