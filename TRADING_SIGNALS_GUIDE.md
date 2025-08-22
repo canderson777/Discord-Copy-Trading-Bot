@@ -59,6 +59,17 @@ Trade alert: LONG ETH 3200
 Alert: SHORT SOL 150
 ```
 
+#### Quick Market/Instant Commands
+```
+# Execute at market with optional leverage
+Buy Now BTC
+Buy Now ETH 30X
+
+# Market direction when symbol implied/defaulted
+Market LONG
+Market SHORT
+```
+
 ---
 
 ### 🔥 Multi-Line Signals (Professional Format)
@@ -107,13 +118,41 @@ Take Profit: 118900
 Risk: 2%
 ```
 
+#### Laddered Entries (Multiple Entry Prices)
+```
+Limit Long BTC: 117320/116900/116500
+SL: 116250
+TP: 118900
+```
+
+You can also place entries on a dedicated line:
+```
+Limit Long BTC: 117320
+Entries: 117320/116900/116500
+SL: 116250
+TP: 118900
+```
+
+Separators supported: `/`, `,` (comma), or spaces. The bot will parse all numbers on the line.
+
+#### Multiple Take Profits (Partial Exits)
+```
+Limit Long BTC: 117320
+SL: 116250
+TP: 118900/119500/120000
+```
+
+Behavior:
+- The bot sets up partial exits at each TP level.
+- Default fractions are split equally across all TPs (e.g., 2 TPs → 50/50, 3 TPs → ~33/33/34).
+- You can customize fractions via the `TP_FRACTIONS` environment variable (see README for details).
+
 #### Advanced Multi-Line
 ```
 📊 BTC Trade Setup
-Limit Long BTC: 117320
+Limit Long BTC: 117320/116900
 Stop Loss: 116690
-TP1: 118900
-TP2: 120000
+TP: 118900/120000
 Leverage: 3X
 Risk/Reward: 1:4
 ```

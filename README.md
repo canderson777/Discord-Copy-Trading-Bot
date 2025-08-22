@@ -78,7 +78,67 @@ TRADER_USER_ID=987654321098765432
 AUTO_EXECUTE=false
 MAX_POSITION_SIZE=0.1
 LEVERAGE=2.0
+TP_FRACTIONS=33/33/34
 ```
+
+## 🧪 Testing Your Bot
+
+### Step 1: Validate Configuration
+```bash
+python test_config.py
+```
+This will verify your private key, Discord token, and network connection.
+
+### Step 2: Test Signal Parsing
+```bash
+python debug_discord.py
+```
+This tests message parsing without connecting to Discord.
+
+### Step 3: Test Discord Connection
+```bash
+python simple_discord_test.py
+```
+Basic Discord connection test - press Ctrl+C to stop.
+
+### Step 4: Run Full Bot Testing
+```bash
+python discord_trader_bot.py
+```
+
+### Step 5: Test in Discord
+Once the bot is running, test these commands in your Discord channel:
+
+**Basic Commands:**
+- `!status` - Check bot status
+- `!ping` - Test connection
+- `!test` - Verify bot is responding
+
+**Signal Testing:**
+Post these messages to test signal detection:
+```
+BUY BTC AT 50000
+SHORT ETH 3000 5X
+🚀 SOL LONG $150
+```
+
+**Multi-line Signal Testing:**
+```
+Limit Long BTC: 117320
+Stop Loss: 116690
+TP: 118900
+```
+
+### Expected Bot Behavior
+- Bot reacts with 🤔 to detected signals
+- Shows confirmation message with signal details
+- React with ✅ to confirm execution (safe - no real trades in testing mode)
+- React with ❌ to ignore the signal
+
+### Troubleshooting
+- Check `discord_trader.log` for detailed logs
+- Ensure bot has proper Discord permissions (Read Messages, Send Messages, Add Reactions)
+- Verify you're testing in the correct channel (if TRADING_CHANNEL_ID is set)
 
 ## 🛡️ Safety Features
 
@@ -92,6 +152,30 @@ LEVERAGE=2.0
 
 - [Complete Trading Signals Guide](TRADING_SIGNALS_GUIDE.md)
 - [Setup Instructions](setup_instructions.md)
+
+### Take Profit Fractions (Partial Exits)
+
+You can define how much of the original position to close at each TP level.
+
+- Code location: `copy_trader.py`
+  - Function: `_parse_tp_fractions`
+  - Used by: `check_positions` when TP levels are hit
+- Default behavior: Equal fractions across all TPs. With 3 TPs, defaults to ~33% each.
+- Environment variable: `TP_FRACTIONS`
+
+Accepted formats (they normalize to sum to 100%):
+
+```env
+# All equivalent examples for 3 TPs
+TP_FRACTIONS=33/33/34
+TP_FRACTIONS=33,33,34
+TP_FRACTIONS=0.33/0.33/0.34
+TP_FRACTIONS=25 50 25
+```
+
+Notes:
+- If the number of fractions does not match the number of TP levels, the bot falls back to equal splits.
+- Fractions apply to the ORIGINAL position size. The bot calculates a proportional close size for the current remaining position when each TP triggers.
 
 ## ⚠️ Disclaimer
 

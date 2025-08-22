@@ -59,6 +59,11 @@ Risk: 2%""",
         """Entry: Long BTC 117320
 SL: 116690
 TP: 118900""",
+
+        # With multiple entries and TPs
+        """Limit Long BTC: 117320/116900/116500
+SL: 116250
+TP: 118900/119500/120000""",
     ]
     
     for i, message in enumerate(test_messages, 1):
@@ -68,10 +73,14 @@ TP: 118900""",
         try:
             signal = bot.parse_multiline_signal(message)
             if signal:
-                print(f"   ✅ DETECTED: {signal['action']} {signal['symbol']} @ ${signal['price']}")
+                print(f"   ✅ DETECTED: {signal['action']} {signal['symbol']} @ ${signal.get('price', 'n/a')}")
                 if 'stop_loss' in signal:
                     print(f"       Stop Loss: ${signal['stop_loss']}")
-                if 'take_profit' in signal:
+                if 'entries' in signal:
+                    print(f"       Entries: {' / '.join(signal['entries'])}")
+                if 'take_profits' in signal:
+                    print(f"       TPs: {' / '.join(signal['take_profits'])}")
+                elif 'take_profit' in signal:
                     print(f"       Take Profit: ${signal['take_profit']}")
                 if 'leverage' in signal:
                     print(f"       Leverage: {signal['leverage']}")
