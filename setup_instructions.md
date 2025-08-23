@@ -67,7 +67,7 @@ The bot can parse various trading signal formats:
 
 - `!status` - Check bot status and active trades
 - `!toggle_auto` - Toggle auto-execution on/off
-- `!close SYMBOL PRICE` - Manually close a position
+- `!close SYMBOL [PRICE]` - Close position (market if price omitted)
 
 ## Safety Features
 
