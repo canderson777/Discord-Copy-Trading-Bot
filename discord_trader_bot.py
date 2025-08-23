@@ -160,6 +160,64 @@ class DiscordTraderBot:
             
             elif reaction.emoji == '❌' and "Trade Signal Detected" in reaction.message.content:
                 await reaction.message.edit(content=reaction.message.content + "\n\n❌ **IGNORED**")
+        
+        # Register bot commands within the bot context so they're discovered
+        @self.bot.command(name='status')
+        async def status_command(ctx):
+            """Check bot and trader status"""
+            active_trades = len(self.trader.active_trades)
+            trading_enabled = self.trader.contracts_loaded
+            
+            embed = discord.Embed(
+                title="🤖 Copy Trader Status",
+                color=0x00ff00 if trading_enabled else 0xff9900
+            )
+            embed.add_field(name="Trading Mode", value="🟢 Live Trading" if trading_enabled else "🟡 Testing Mode", inline=True)
+            embed.add_field(name="Active Trades", value=str(active_trades), inline=True)
+            embed.add_field(name="Auto Execute", value="✅" if self.config['auto_execute'] else "❌", inline=True)
+            
+            if not trading_enabled:
+                embed.add_field(
+                    name="⚠️ Notice", 
+                    value="Bot is in testing mode. Signals will be detected but not executed. Configure contract addresses to enable trading.", 
+                    inline=False
+                )
+            
+            if self.trader.active_trades:
+                trades_info = ""
+                for symbol, trade in self.trader.active_trades.items():
+                    if trade.get('entries'):
+                        entries_fmt = ' / '.join([str(p) for p in trade['entries']])
+                        trades_info += f"{symbol}: entries {entries_fmt} (avg ${trade['entry_price']:.2f})\n"
+                    else:
+                        trades_info += f"{symbol}: ${trade['entry_price']}\n"
+                embed.add_field(name="Positions", value=trades_info, inline=False)
+            
+            await ctx.send(embed=embed)
+        
+        @self.bot.command(name='toggle_auto')
+        async def toggle_auto_execute(ctx):
+            """Toggle auto-execution of trades"""
+            self.config['auto_execute'] = not self.config['auto_execute']
+            status = "enabled" if self.config['auto_execute'] else "disabled"
+            await ctx.send(f"🔄 Auto-execution {status}")
+        
+        @self.bot.command(name='close')
+        async def close_position(ctx, symbol: str, price: float):
+            """Manually close a position"""
+            if symbol.upper() in self.trader.active_trades:
+                signal = {
+                    'action': 'SELL',
+                    'symbol': symbol.upper(),
+                    'price': str(price)
+                }
+                success = self.trader.receive_trade_signal(signal)
+                if success:
+                    await ctx.send(f"✅ Closed {symbol} position at ${price}")
+                else:
+                    await ctx.send(f"❌ Failed to close {symbol} position")
+            else:
+                await ctx.send(f"❌ No active position for {symbol}")
     
     def parse_trade_message(self, message_content: str) -> dict:
         """Parse Discord message to extract trade signals"""
@@ -503,62 +561,6 @@ class DiscordTraderBot:
         
         return signal if len(signal) >= 3 else None
     
-    @commands.command(name='status')
-    async def status_command(self, ctx):
-        """Check bot and trader status"""
-        active_trades = len(self.trader.active_trades)
-        trading_enabled = self.trader.contracts_loaded
-        
-        embed = discord.Embed(
-            title="🤖 Copy Trader Status",
-            color=0x00ff00 if trading_enabled else 0xff9900
-        )
-        embed.add_field(name="Trading Mode", value="🟢 Live Trading" if trading_enabled else "🟡 Testing Mode", inline=True)
-        embed.add_field(name="Active Trades", value=str(active_trades), inline=True)
-        embed.add_field(name="Auto Execute", value="✅" if self.config['auto_execute'] else "❌", inline=True)
-        
-        if not trading_enabled:
-            embed.add_field(
-                name="⚠️ Notice", 
-                value="Bot is in testing mode. Signals will be detected but not executed. Configure contract addresses to enable trading.", 
-                inline=False
-            )
-        
-        if self.trader.active_trades:
-            trades_info = ""
-            for symbol, trade in self.trader.active_trades.items():
-                if trade.get('entries'):
-                    entries_fmt = ' / '.join([str(p) for p in trade['entries']])
-                    trades_info += f"{symbol}: entries {entries_fmt} (avg ${trade['entry_price']:.2f})\n"
-                else:
-                    trades_info += f"{symbol}: ${trade['entry_price']}\n"
-            embed.add_field(name="Positions", value=trades_info, inline=False)
-        
-        await ctx.send(embed=embed)
-    
-    @commands.command(name='toggle_auto')
-    async def toggle_auto_execute(self, ctx):
-        """Toggle auto-execution of trades"""
-        self.config['auto_execute'] = not self.config['auto_execute']
-        status = "enabled" if self.config['auto_execute'] else "disabled"
-        await ctx.send(f"🔄 Auto-execution {status}")
-    
-    @commands.command(name='close')
-    async def close_position(self, ctx, symbol: str, price: float):
-        """Manually close a position"""
-        if symbol.upper() in self.trader.active_trades:
-            signal = {
-                'action': 'SELL',
-                'symbol': symbol.upper(),
-                'price': str(price)
-            }
-            success = self.trader.receive_trade_signal(signal)
-            if success:
-                await ctx.send(f"✅ Closed {symbol} position at ${price}")
-            else:
-                await ctx.send(f"❌ Failed to close {symbol} position")
-        else:
-            await ctx.send(f"❌ No active position for {symbol}")
     
     def run(self):
         """Start the Discord bot"""
