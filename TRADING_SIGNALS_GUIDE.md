@@ -6,12 +6,13 @@
 - `!status` - Check bot status, active trades, and trading mode
 - `!ping` - Check bot connection and latency
 - `!toggle_auto` - Toggle between manual confirmation and auto-execution
-- `!close SYMBOL PRICE` - Manually close a position (e.g., `!close BTC 50000`)
+- `!close SYMBOL [PRICE]` - Close position (market if omitted), e.g., `!close BTC` or `!close BTC 50000`
 
 ### Example Usage
 ```
 !status
 !toggle_auto
+!close BTC
 !close BTC 117500
 !ping
 ```

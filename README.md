@@ -59,7 +59,7 @@ SHORT SOL 150
 
 - `!status` - Check bot status and active trades
 - `!toggle_auto` - Toggle between manual/auto execution
-- `!close SYMBOL PRICE` - Manually close a position
+- `!close SYMBOL [PRICE]` - Close position (market if price omitted)
 - `!ping` - Check bot connection
 
 ## 🔧 Configuration
