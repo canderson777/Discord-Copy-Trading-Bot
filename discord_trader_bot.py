@@ -203,17 +203,31 @@ class DiscordTraderBot:
             await ctx.send(f"🔄 Auto-execution {status}")
         
         @self.bot.command(name='close')
-        async def close_position(ctx, symbol: str, price: float):
-            """Manually close a position"""
-            if symbol.upper() in self.trader.active_trades:
-                signal = {
-                    'action': 'SELL',
-                    'symbol': symbol.upper(),
-                    'price': str(price)
-                }
+        async def close_position(ctx, symbol: str, price: float = None):
+            """Manually close a position. If price omitted, closes at market."""
+            sym = symbol.upper()
+            if sym in self.trader.active_trades:
+                # Build signal for market or limit close
+                if price is None:
+                    signal = {
+                        'action': 'SELL',
+                        'symbol': sym,
+                        'price': '0',            # placeholder to satisfy validation
+                        'order_type': 'MARKET'   # execute at current market price
+                    }
+                else:
+                    signal = {
+                        'action': 'SELL',
+                        'symbol': sym,
+                        'price': str(price),
+                        'order_type': 'LIMIT'
+                    }
                 success = self.trader.receive_trade_signal(signal)
                 if success:
-                    await ctx.send(f"✅ Closed {symbol} position at ${price}")
+                    if price is None:
+                        await ctx.send(f"✅ Closed {symbol} at market")
+                    else:
+                        await ctx.send(f"✅ Closed {symbol} position at ${price}")
                 else:
                     await ctx.send(f"❌ Failed to close {symbol} position")
             else:
