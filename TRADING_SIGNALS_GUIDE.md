@@ -238,7 +238,7 @@ Target: 145
 
 ---
 
-## 🚨 Important Notes
+## 🚨 Important Notes!
 
 ### 🟡 Testing Mode (Current)
 - Bot detects and logs all signals
