@@ -5,6 +5,7 @@ Test script to validate environment configuration before running the bot
 import os
 from dotenv import load_dotenv
 from web3 import Web3
+import requests
 
 def test_environment():
     """Test environment variables and configuration"""
@@ -14,23 +15,21 @@ def test_environment():
     # Load environment variables
     load_dotenv()
     
-    # Required variables for basic functionality
+    # Required variables for Discord functionality
     required_vars = {
-        'ARBITRUM_RPC_URL': 'Arbitrum RPC endpoint',
-        'PRIVATE_KEY': 'Wallet private key',
         'DISCORD_BOT_TOKEN': 'Discord bot token',
     }
     
     # Optional variables
     optional_vars = {
-        'CLEARINGHOUSE_ADDRESS': 'Hyperliquid clearinghouse contract',
-        'EXCHANGE_ADDRESS': 'Hyperliquid exchange contract', 
-        'USDC_ADDRESS': 'USDC token contract',
         'TRADING_CHANNEL_ID': 'Discord channel ID',
         'TRADER_USER_ID': 'Discord user ID to copy',
-        'MAX_POSITION_SIZE': 'Maximum position size',
+        'MAX_POSITION_SIZE': 'Maximum position size (coin units)',
         'LEVERAGE': 'Trading leverage',
-        'AUTO_EXECUTE': 'Auto-execute trades'
+        'AUTO_EXECUTE': 'Auto-execute trades',
+        'HYPERLIQUID_API_BASE': 'Hyperliquid API base URL',
+        'HL_API_PRIVATE_KEY': 'Hyperliquid API wallet private key',
+        'HL_TESTNET': 'Use Hyperliquid testnet endpoints'
     }
     
     errors = []
@@ -81,45 +80,30 @@ def test_environment():
             print(f"  ⚠️  {var}: Not set - {description}")
             warnings.append(f"Consider setting {var}")
     
-    # Test RPC connection
-    print("\n🌐 NETWORK CONNECTION:")
-    rpc_url = os.getenv('ARBITRUM_RPC_URL')
-    if rpc_url:
-        try:
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
-            if w3.is_connected():
-                chain_id = w3.eth.chain_id
-                print(f"  ✅ Connected to network (Chain ID: {chain_id})")
-                if chain_id != 42161:
-                    warnings.append(f"Chain ID {chain_id} is not Arbitrum (42161)")
-            else:
-                print(f"  ❌ Cannot connect to RPC")
-                errors.append("RPC connection failed")
-        except Exception as e:
-            print(f"  ❌ RPC connection error: {str(e)}")
-            errors.append("RPC connection failed")
+    # Test Hyperliquid API connectivity
+    print("\n🌐 HYPERLIQUID API:")
+    api_base = os.getenv('HYPERLIQUID_API_BASE', 'https://api.hyperliquid.xyz')
+    try:
+        r = requests.get(f"{api_base}/info", timeout=5)
+        if r.status_code == 200:
+            print(f"  ✅ API reachable at {api_base}")
+        else:
+            print(f"  ⚠️  API returned status {r.status_code} from {api_base}")
+            warnings.append("Hyperliquid API returned non-200 status")
+    except Exception as e:
+        print(f"  ❌ API connection error: {str(e)}")
+        warnings.append("Cannot reach Hyperliquid API base")
     
-    # Test wallet
-    print("\n👛 WALLET:")
-    private_key = os.getenv('PRIVATE_KEY')
-    if private_key and rpc_url:
-        try:
-            w3 = Web3(Web3.HTTPProvider(rpc_url))
-            account = w3.eth.account.from_key(private_key)
-            print(f"  ✅ Wallet address: {account.address}")
-            
-            # Check balance
-            try:
-                balance = w3.eth.get_balance(account.address)
-                balance_eth = w3.from_wei(balance, 'ether')
-                print(f"  💰 ETH balance: {balance_eth:.4f} ETH")
-                if balance_eth < 0.01:
-                    warnings.append("Low ETH balance for gas fees")
-            except Exception as e:
-                print(f"  ⚠️  Could not check balance: {str(e)}")
-        except Exception as e:
-            print(f"  ❌ Wallet error: {str(e)}")
-            errors.append("Invalid private key")
+    # Test API mode credentials presence
+    print("\n🔐 API MODE:")
+    hl_pk = os.getenv('HL_API_PRIVATE_KEY')
+    if hl_pk:
+        masked = hl_pk[:6] + "..." + hl_pk[-4:] if len(hl_pk) > 12 else "(hidden)"
+        print(f"  ✅ HL_API_PRIVATE_KEY: {masked}")
+        print("  ✅ API mode credentials present")
+    else:
+        print("  ⚠️  HL_API_PRIVATE_KEY not set - running in simulation mode (no live trades)")
+        warnings.append("API key not set; simulation mode only")
     
     # Summary
     print("\n" + "=" * 50)

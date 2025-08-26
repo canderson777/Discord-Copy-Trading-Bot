@@ -34,12 +34,19 @@ This Discord integration allows your copy trader bot to automatically monitor Di
 
 ### 4. Configure Environment
 1. Copy `env_example.txt` to `.env`
-2. Fill in all the required values:
+2. Fill in all the required values (API mode):
    ```
    DISCORD_BOT_TOKEN=your_bot_token_here
+   HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
+   HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
+   HL_TESTNET=false
+
+   # Optional
    TRADING_CHANNEL_ID=123456789012345678
    TRADER_USER_ID=987654321098765432
    AUTO_EXECUTE=false  # Set to true for automatic execution
+   MAX_POSITION_SIZE=0.1
+   LEVERAGE=2.0
    ```
 
 ### 5. Install Dependencies
@@ -47,10 +54,13 @@ This Discord integration allows your copy trader bot to automatically monitor Di
 pip install -r requirements.txt
 ```
 
-### 6. Run the Bot
+### 6. Run the Bot (Simulation vs Live)
 ```bash
 python discord_trader_bot.py
 ```
+
+- If `HL_API_PRIVATE_KEY` is NOT set: simulation mode (signals tracked, no live trades)
+- If `HL_API_PRIVATE_KEY` IS set: live trading enabled via Hyperliquid API/SDK
 
 ## Supported Signal Formats
 
@@ -103,8 +113,53 @@ The bot can parse various trading signal formats:
 - Monitor the logs in `discord_trader.log`
 - The bot only executes trades from the specified user in the specified channel
 
+--------------------------------------------------------------------------------------------------------
 
 
+## Quick Start: Run in a Python 3.11 venv (Windows)
+
+1. Open PowerShell in the project folder
+```bash
+cd "C:\Users\Jay\Documents\Copy Trader Bot"
+```
+
+2. Create a virtual environment (Python 3.11)
+```bash
+py -3.11 -m venv .venv
+```
+
+3. Activate it
+```bash
+.\.venv\Scripts\activate
+```
+
+4. Upgrade pip and install dependencies
+```bash
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+```
+
+5. Create and fill your .env
+```bash
+copy env_example.txt .env
+```
+Edit `.env` to add your keys/settings.
+
+6. Run the bot
+```bash
+python discord_trader_bot.py
+```
+Or run the standalone trader loop:
+```bash
+python copy_trader.py
+```
+
+7. When done
+```bash
+deactivate
+```
+
+Note: Prefer Python 3.11 for smooth installs. Some deps (e.g., ckzg) may fail to build on newer versions without build tools.
 --------------------------------------------------------------------------------------------------
 
 

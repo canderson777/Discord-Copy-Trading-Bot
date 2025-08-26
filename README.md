@@ -64,11 +64,13 @@ SHORT SOL 150
 
 ## 🔧 Configuration
 
-### Required Settings
+### Required Settings (API Mode)
 ```env
 DISCORD_BOT_TOKEN=your_discord_bot_token
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc
-PRIVATE_KEY=your_wallet_private_key
+HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
+HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
+# Optional: set to true to use testnet endpoints if supported
+HL_TESTNET=false
 ```
 
 ### Optional Settings
@@ -87,7 +89,7 @@ TP_FRACTIONS=33/33/34
 ```bash
 python test_config.py
 ```
-This will verify your private key, Discord token, and network connection.
+This will verify your Discord token and Hyperliquid API connectivity. If `HL_API_PRIVATE_KEY` is not set, the bot runs in simulation mode (no live trades).
 
 ### Step 2: Test Signal Parsing
 ```bash
