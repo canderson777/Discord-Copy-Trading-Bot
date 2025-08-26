@@ -1,4 +1,3 @@
-from web3 import Web3
 import json
 import time
 from datetime import datetime
@@ -8,6 +7,18 @@ from typing import Dict, Optional
 import os
 from dotenv import load_dotenv
 import requests
+try:
+    # Hyperliquid SDK (installed via requirements)
+    from hyperliquid.info import Info
+    from hyperliquid.exchange import Exchange
+    from hyperliquid.utils.signing import LocalWallet
+    from hyperliquid.utils import constants as hl_constants
+except Exception:
+    # SDK not available at import time; we'll guard usage at runtime
+    Info = None
+    Exchange = None
+    LocalWallet = None
+    hl_constants = None
 
 # Load environment variables
 load_dotenv()
@@ -24,38 +35,40 @@ logging.basicConfig(
 
 class HyperliquidTrader:
     def __init__(self):
-        # Validate environment variables first
-        self._validate_environment()
-        
-        # Initialize Web3 connection to Arbitrum
-        arbitrum_rpc = os.getenv('ARBITRUM_RPC_URL')
-        if not arbitrum_rpc:
-            raise ValueError("ARBITRUM_RPC_URL not found in environment variables")
-        
-        self.w3 = Web3(Web3.HTTPProvider(arbitrum_rpc))
-        
-        # Load configuration
+        # Load configuration and detect API mode
+        load_dotenv()
+        self.api_base = os.getenv('HYPERLIQUID_API_BASE', 'https://api.hyperliquid.xyz')
+        self.hl_private_key = os.getenv('HL_API_PRIVATE_KEY')
+
+        # Trading configuration
         self.config = {
-            'private_key': os.getenv('PRIVATE_KEY'),
-            'max_position_size': float(os.getenv('MAX_POSITION_SIZE', '0.1')),  # Maximum position size in ETH
-            'leverage': float(os.getenv('LEVERAGE', '2.0')),  # Default leverage
-            'min_profit_threshold': float(os.getenv('MIN_PROFIT_THRESHOLD', '0.02')),  # 2% minimum profit
-            'stop_loss_percentage': float(os.getenv('STOP_LOSS_PERCENTAGE', '0.05')),  # 5% stop loss
+            'max_position_size': float(os.getenv('MAX_POSITION_SIZE', '0.1')),
+            'leverage': float(os.getenv('LEVERAGE', '2.0')),
+            'min_profit_threshold': float(os.getenv('MIN_PROFIT_THRESHOLD', '0.02')),
+            'stop_loss_percentage': float(os.getenv('STOP_LOSS_PERCENTAGE', '0.05')),
         }
-        
-        # Initialize account
-        self.account = self.w3.eth.account.from_key(self.config['private_key'])
-        
-        # Hyperliquid contract addresses
-        self.contracts = {
-            'clearinghouse': os.getenv('CLEARINGHOUSE_ADDRESS'),
-            'exchange': os.getenv('EXCHANGE_ADDRESS'),
-            'usdc': os.getenv('USDC_ADDRESS')
-        }
-        
-        # Load contract ABIs (optional for Discord-only mode)
-        self.contracts_loaded = self.load_contracts()
-        
+
+        # Initialize Hyperliquid SDK if credentials provided; otherwise run in simulation mode
+        self.simulation_mode = self.hl_private_key is None or Info is None or Exchange is None or LocalWallet is None
+        self.info = None
+        self.exchange = None
+        self.wallet = None
+        if not self.simulation_mode:
+            try:
+                # Prefer provided API base; fall back to SDK constants if possible
+                base_url = self.api_base
+                if hl_constants is not None:
+                    # If user set TESTNET via env (optional), switch URL
+                    use_testnet = os.getenv('HL_TESTNET', 'false').lower() == 'true'
+                    base_url = hl_constants.TESTNET_API_URL if use_testnet else base_url
+                self.info = Info(base_url, skip_ws=True)
+                self.wallet = LocalWallet(self.hl_private_key)
+                self.exchange = Exchange(self.wallet, base_url, self.info)
+                logging.info("Hyperliquid SDK initialized - live trading enabled")
+            except Exception as e:
+                logging.warning(f"Failed to initialize Hyperliquid SDK, falling back to simulation mode: {str(e)}")
+                self.simulation_mode = True
+
         # Initialize trade tracking
         self.active_trades: Dict[str, Dict] = {}
 
@@ -95,144 +108,43 @@ class HyperliquidTrader:
             return [1.0 / float(tp_count)] * tp_count if tp_count > 0 else []
         
     def _validate_environment(self):
-        """Validate that all required environment variables are present and valid"""
-        required_vars = [
-            'ARBITRUM_RPC_URL',
-            'PRIVATE_KEY',
-            'CLEARINGHOUSE_ADDRESS', 
-            'EXCHANGE_ADDRESS',
-            'USDC_ADDRESS'
-        ]
-        
-        missing_vars = []
-        for var in required_vars:
-            value = os.getenv(var)
-            if not value:
-                missing_vars.append(var)
-        
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-        
-        # Validate private key format
-        private_key = os.getenv('PRIVATE_KEY')
-        if private_key:
-            # Remove 0x prefix if present
-            if private_key.startswith('0x'):
-                private_key = private_key[2:]
-            
-            # Check if it's valid hex and correct length
-            if len(private_key) != 64:
-                raise ValueError("Private key must be 64 characters long (32 bytes)")
-            
-            try:
-                int(private_key, 16)
-            except ValueError:
-                raise ValueError("Private key must be a valid hexadecimal string")
-            
-            # Update the environment variable with cleaned format
-            os.environ['PRIVATE_KEY'] = '0x' + private_key
-        
-        logging.info("Environment validation passed")
-        
-    def load_contracts(self):
-        """Load contract ABIs and initialize contract instances"""
-        try:
-            # Check if ABI files exist
-            abi_files = [
-                'abis/hyperliquid_clearinghouse.json',
-                'abis/hyperliquid_exchange.json', 
-                'abis/usdc.json'
-            ]
-            
-            missing_files = []
-            for file_path in abi_files:
-                if not os.path.exists(file_path):
-                    missing_files.append(file_path)
-            
-            if missing_files:
-                logging.warning(f"Missing ABI files: {', '.join(missing_files)}")
-                logging.warning("Bot will run in Discord-only mode (no actual trading)")
-                self.clearinghouse = None
-                self.exchange = None
-                self.usdc = None
-                return False
-            
-            # Load Hyperliquid contract ABIs
-            with open('abis/hyperliquid_clearinghouse.json', 'r') as f:
-                clearinghouse_abi = json.load(f)
-            
-            with open('abis/hyperliquid_exchange.json', 'r') as f:
-                exchange_abi = json.load(f)
-            
-            with open('abis/usdc.json', 'r') as f:
-                usdc_abi = json.load(f)
-            
-            # Check if contract addresses are provided
-            if not all([self.contracts['clearinghouse'], self.contracts['exchange'], self.contracts['usdc']]):
-                logging.warning("Contract addresses not configured. Bot will run in Discord-only mode")
-                self.clearinghouse = None
-                self.exchange = None
-                self.usdc = None
-                return False
-            
-            # Initialize contracts
-            self.clearinghouse = self.w3.eth.contract(
-                address=self.w3.to_checksum_address(self.contracts['clearinghouse']),
-                abi=clearinghouse_abi
-            )
-            
-            self.exchange = self.w3.eth.contract(
-                address=self.w3.to_checksum_address(self.contracts['exchange']),
-                abi=exchange_abi
-            )
-            
-            self.usdc = self.w3.eth.contract(
-                address=self.w3.to_checksum_address(self.contracts['usdc']),
-                abi=usdc_abi
-            )
-            
-            logging.info("Contracts loaded successfully - trading enabled")
-            return True
-                
-        except Exception as e:
-            logging.error(f"Error loading contracts: {str(e)}")
-            logging.warning("Bot will run in Discord-only mode (no actual trading)")
-            self.clearinghouse = None
-            self.exchange = None
-            self.usdc = None
-            return False
+        """Retained for backward compatibility; no-op in API mode."""
+        return True
 
     def get_market_info(self, symbol: str) -> Dict:
-        """Get market information from Hyperliquid API"""
+        """Get market information from Hyperliquid API.
+        Falls back to REST call to /info if SDK is unavailable.
+        """
         try:
-            response = requests.get(f"https://api.hyperliquid.xyz/info")
+            if self.info is not None:
+                # Try to fetch price via SDK if available
+                # Many SDKs expose mid prices via info or meta endpoints.
+                # As a simple approach, fall back to REST which returns a list of markets.
+                pass
+            response = requests.get(f"{self.api_base}/info", timeout=5)
             if response.status_code == 200:
                 markets = response.json()
                 for market in markets:
-                    if market['symbol'] == symbol:
+                    if market.get('symbol') == symbol:
                         return market
             return None
         except Exception as e:
             logging.error(f"Error fetching market info: {str(e)}")
             return None
 
-    def get_position_size(self, symbol: str, price: float) -> int:
-        """Calculate position size in USDC"""
+    def get_position_size(self, symbol: str, price: float) -> float:
+        """Calculate position size in coin units for HL orders.
+        Uses MAX_POSITION_SIZE as the cap in coin units. If user balance is retrievable via SDK,
+        we could refine this; for now, return the configured max.
+        """
         try:
-            # Get account balance
-            balance = self.usdc.functions.balanceOf(self.account.address).call()
-            balance_usdc = balance / 1e6  # Convert from 6 decimals
-            
-            # Calculate position size based on max position size and leverage
-            position_size = min(
-                balance_usdc * self.config['leverage'],
-                self.config['max_position_size'] * price
-            )
-            
-            return int(position_size * 1e6)  # Convert back to 6 decimals
+            max_size = float(self.config['max_position_size'])
+            if max_size <= 0:
+                return 0.0
+            return max_size
         except Exception as e:
             logging.error(f"Error calculating position size: {str(e)}")
-            return 0
+            return 0.0
 
     def receive_trade_signal(self, signal_data: Dict):
         """Process incoming trade signals"""
@@ -243,8 +155,8 @@ class HyperliquidTrader:
                 logging.error("Invalid signal data: missing required fields")
                 return False
             
-            # Check if contracts are loaded for actual trading
-            if not self.contracts_loaded:
+            # If in simulation mode (no API credentials), log and simulate
+            if self.simulation_mode:
                 logging.info(f"Signal received: {signal_data['action']} {signal_data['symbol']} @ ${signal_data['price']}")
                 # Simulate tracking for testing mode
                 if signal_data['action'] == 'BUY':
@@ -262,7 +174,7 @@ class HyperliquidTrader:
                         'timestamp': datetime.now(),
                         'tx_hash': None
                     }
-                logging.warning("Contracts not loaded - signal tracked but not executed")
+                logging.warning("Simulation mode - signal tracked but not executed")
                 return True  # Return True so Discord bot shows success for testing
             
             # Update leverage if provided
@@ -283,7 +195,7 @@ class HyperliquidTrader:
             return False
 
     def execute_buy(self, signal_data: Dict) -> bool:
-        """Execute a buy order on Hyperliquid"""
+        """Execute a buy order using Hyperliquid SDK (or simulate if not available)."""
         try:
             symbol = signal_data['symbol']
             order_type = signal_data.get('order_type', 'LIMIT').upper()
@@ -296,8 +208,8 @@ class HyperliquidTrader:
             
             entries: Optional[list] = signal_data.get('entries')
             take_profits: Optional[list] = signal_data.get('take_profits')
-            tx_hashes = []
-            total_position_size = 0
+            order_refs = []
+            total_position_size = 0.0
             avg_price_accumulator = 0.0
             
             if entries and order_type == 'LIMIT':
@@ -305,45 +217,41 @@ class HyperliquidTrader:
                 logging.info(f"Placing laddered entries for {symbol}: {entries}")
                 for entry_str in entries:
                     execution_price = float(entry_str)
-                    position_size = self.get_position_size(symbol, execution_price) // len(entries)
-                    if position_size == 0:
+                    position_size = self.get_position_size(symbol, execution_price) / float(len(entries))
+                    if position_size <= 0:
                         logging.error("Invalid position size for ladder entry")
                         continue
-                    transaction = self.exchange.functions.openPosition(
-                        market_info['id'],
-                        int(position_size),
-                        int(execution_price * 1e6),
-                        self.config['leverage'],
-                        True
-                    ).build_transaction({
-                        'from': self.account.address,
-                        'gas': 500000,
-                        'gasPrice': self.w3.eth.gas_price,
-                        'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                        'chainId': 42161
-                    })
-                    signed_txn = self.w3.eth.account.sign_transaction(transaction, self.config['private_key'])
-                    tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
-                    receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-                    if receipt['status'] == 1:
-                        tx_hashes.append(tx_hash.hex())
-                        total_position_size += int(position_size)
-                        avg_price_accumulator += execution_price * int(position_size)
-                        logging.info(f"Ladder entry executed at ${execution_price}: {tx_hash.hex()}")
+                    if self.simulation_mode or self.exchange is None:
+                        order_refs.append({"simulated": True, "px": execution_price, "sz": position_size})
+                        total_position_size += float(position_size)
+                        avg_price_accumulator += execution_price * float(position_size)
+                        logging.info(f"[SIM] Ladder entry at ${execution_price} for {position_size} {symbol}")
                     else:
-                        logging.error(f"Ladder entry failed at ${execution_price}")
+                        order = {
+                            "coin": symbol,
+                            "is_buy": True,
+                            "sz": position_size,
+                            "limit_px": execution_price,
+                            "order_type": {"limit": {"tif": "Gtc"}},
+                            "reduce_only": False
+                        }
+                        resp = self.exchange.place_order(order)
+                        order_refs.append(resp)
+                        total_position_size += float(position_size)
+                        avg_price_accumulator += execution_price * float(position_size)
+                        logging.info(f"Ladder entry placed at ${execution_price}: {resp}")
                 if total_position_size == 0:
                     return False
                 avg_entry_price = avg_price_accumulator / total_position_size
                 self.active_trades[symbol] = {
                     'entry_price': avg_entry_price,
                     'entries': [float(p) for p in entries],
-                    'position_size': total_position_size,
-                    'initial_position_size': total_position_size,
+                    'position_size': float(total_position_size),
+                    'initial_position_size': float(total_position_size),
                     'leverage': self.config['leverage'],
                     'order_type': order_type,
                     'timestamp': datetime.now(),
-                    'tx_hash': tx_hashes,
+                    'order_refs': order_refs,
                     'take_profits': [float(p) for p in take_profits] if take_profits else None,
                     'tp_filled': [False] * len(take_profits) if take_profits else None,
                     'stop_loss': float(signal_data['stop_loss']) if 'stop_loss' in signal_data else None
@@ -362,51 +270,49 @@ class HyperliquidTrader:
                     execution_price = float(signal_data['price'])
                     logging.info(f"Limit order: Using specified price ${execution_price} for {symbol}")
                 position_size = self.get_position_size(symbol, execution_price)
-                if position_size == 0:
+                if position_size <= 0:
                     logging.error("Invalid position size")
                     return False
-                transaction = self.exchange.functions.openPosition(
-                    market_info['id'],
-                    position_size,
-                    int(execution_price * 1e6),
-                    self.config['leverage'],
-                    True
-                ).build_transaction({
-                    'from': self.account.address,
-                    'gas': 500000,
-                    'gasPrice': self.w3.eth.gas_price,
-                    'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                    'chainId': 42161
-                })
-                signed_txn = self.w3.eth.account.sign_transaction(transaction, self.config['private_key'])
-                tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
-                receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-                if receipt['status'] == 1:
-                    self.active_trades[symbol] = {
-                        'entry_price': execution_price,
-                        'entries': None,
-                        'position_size': position_size,
-                        'initial_position_size': position_size,
-                        'leverage': self.config['leverage'],
-                        'order_type': order_type,
-                        'timestamp': datetime.now(),
-                        'tx_hash': tx_hash.hex(),
-                        'take_profits': [float(p) for p in take_profits] if take_profits else None,
-                        'tp_filled': [False] * len(take_profits) if take_profits else None,
-                        'stop_loss': float(signal_data['stop_loss']) if 'stop_loss' in signal_data else None
-                    }
-                    logging.info(f"Buy order executed successfully: {tx_hash.hex()}")
-                    return True
+                if self.simulation_mode or self.exchange is None:
+                    order_ref = {"simulated": True, "px": execution_price, "sz": position_size}
+                    logging.info(f"[SIM] Buy {symbol} {position_size} @ ${execution_price}")
                 else:
-                    logging.error("Buy order failed")
-                    return False
+                    if order_type == 'MARKET':
+                        # Emulate market by IOC limit at current price
+                        order_type_payload = {"limit": {"tif": "Ioc"}}
+                    else:
+                        order_type_payload = {"limit": {"tif": "Gtc"}}
+                    order = {
+                        "coin": symbol,
+                        "is_buy": True,
+                        "sz": position_size,
+                        "limit_px": execution_price,
+                        "order_type": order_type_payload,
+                        "reduce_only": False
+                    }
+                    order_ref = self.exchange.place_order(order)
+                self.active_trades[symbol] = {
+                    'entry_price': execution_price,
+                    'entries': None,
+                    'position_size': float(position_size),
+                    'initial_position_size': float(position_size),
+                    'leverage': self.config['leverage'],
+                    'order_type': order_type,
+                    'timestamp': datetime.now(),
+                    'order_ref': order_ref,
+                    'take_profits': [float(p) for p in take_profits] if take_profits else None,
+                    'tp_filled': [False] * len(take_profits) if take_profits else None,
+                    'stop_loss': float(signal_data['stop_loss']) if 'stop_loss' in signal_data else None
+                }
+                logging.info("Buy order placed")
+                return True
                 
         except Exception as e:
             logging.error(f"Error executing buy order: {str(e)}")
             return False
 
     def execute_sell(self, signal_data: Dict) -> bool:
-        """Execute a sell order on Hyperliquid"""
+        """Execute a sell/close order using Hyperliquid SDK (or simulate)."""
         try:
             symbol = signal_data['symbol']
             order_type = signal_data.get('order_type', 'LIMIT').upper()
@@ -440,49 +346,44 @@ class HyperliquidTrader:
             # Determine size to close (support partial close)
             sell_fraction = float(signal_data.get('sell_fraction', 1.0))
             sell_fraction = max(0.0, min(1.0, sell_fraction))
-            current_position_size = int(self.active_trades[symbol]['position_size'])
-            size_to_close = int(current_position_size * sell_fraction)
+            current_position_size = float(self.active_trades[symbol]['position_size'])
+            size_to_close = float(current_position_size * sell_fraction)
             if size_to_close <= 0:
                 logging.error("Computed close size is zero; skipping sell")
                 return False
             
-            # Build transaction
-            transaction = self.exchange.functions.closePosition(
-                market_info['id'],
-                size_to_close,
-                int(execution_price * 1e6)  # Convert price to 6 decimals
-            ).build_transaction({
-                'from': self.account.address,
-                'gas': 500000,
-                'gasPrice': self.w3.eth.gas_price,
-                'nonce': self.w3.eth.get_transaction_count(self.account.address),
-                'chainId': 42161  # Arbitrum chain ID
-            })
-            
-            # Sign and send transaction
-            signed_txn = self.w3.eth.account.sign_transaction(transaction, self.config['private_key'])
-            tx_hash = self.w3.eth.send_raw_transaction(signed_txn.raw_transaction)
-            
-            # Wait for confirmation
-            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
-            
-            if receipt['status'] == 1:
-                # Calculate profit/loss (approximate for partial)
-                entry_price = self.active_trades[symbol]['entry_price']
-                exit_price = execution_price
-                profit_percentage = (exit_price - entry_price) / entry_price * self.config['leverage']
-                logging.info(f"Sell order executed successfully: {tx_hash.hex()}")
-                logging.info(f"Profit/Loss (per unit): {profit_percentage:.2%}")
-                # Update position size / close trade if fully exited
-                remaining = current_position_size - size_to_close
-                if remaining <= 0:
-                    del self.active_trades[symbol]
-                else:
-                    self.active_trades[symbol]['position_size'] = remaining
-                return True
+            # Place reduce-only order (market via IOC limit)
+            if self.simulation_mode or self.exchange is None:
+                order_ref = {"simulated": True, "px": execution_price, "sz": size_to_close}
+                logging.info(f"[SIM] Sell {symbol} {size_to_close} @ ${execution_price}")
             else:
-                logging.error("Sell order failed")
-                return False
+                if order_type == 'MARKET':
+                    order_type_payload = {"limit": {"tif": "Ioc"}}
+                else:
+                    order_type_payload = {"limit": {"tif": "Gtc"}}
+                order = {
+                    "coin": symbol,
+                    "is_buy": False,
+                    "sz": size_to_close,
+                    "limit_px": execution_price,
+                    "order_type": order_type_payload,
+                    "reduce_only": True
+                }
+                order_ref = self.exchange.place_order(order)
+
+            # Calculate profit/loss (approximate for partial)
+            entry_price = self.active_trades[symbol]['entry_price']
+            exit_price = execution_price
+            profit_percentage = (exit_price - entry_price) / entry_price * self.config['leverage']
+            logging.info(f"Sell order placed. P/L (per unit): {profit_percentage:.2%}")
+
+            # Update position size / close trade if fully exited
+            remaining = current_position_size - size_to_close
+            if remaining <= 0:
+                del self.active_trades[symbol]
+            else:
+                self.active_trades[symbol]['position_size'] = float(remaining)
+            return True
                 
         except Exception as e:
             logging.error(f"Error executing sell order: {str(e)}")

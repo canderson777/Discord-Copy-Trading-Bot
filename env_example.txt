@@ -2,15 +2,16 @@
 # DO NOT share your .env file - it contains sensitive information!
 
 # =================================================================
-# REQUIRED: Blockchain Configuration
+# REQUIRED: Hyperliquid API Configuration (Live Trading)
 # =================================================================
-# Get a free RPC from Alchemy, Infura, or use public endpoint
-ARBITRUM_RPC_URL=https://arb1.arbitrum.io/rpc
+# Hyperliquid API base
+HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
 
-# Your wallet's private key (64 hex characters, with or without 0x prefix)
-# Example: PRIVATE_KEY=0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef
-# WARNING: Never share this! Anyone with this key can access your funds!
-PRIVATE_KEY=your_64_character_hex_private_key_here
+# API wallet private key for signing requests to the Exchange endpoint
+# (Keep secret; this is NOT your Discord token)
+HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
+# Set true to use testnet if your SDK supports it
+HL_TESTNET=false
 
 # =================================================================
 # REQUIRED: Discord Bot Configuration  
@@ -19,10 +20,11 @@ PRIVATE_KEY=your_64_character_hex_private_key_here
 DISCORD_BOT_TOKEN=your_discord_bot_token_here
 
 # =================================================================
-# OPTIONAL: Hyperliquid Contract Addresses
+# OPTIONAL: Legacy EVM Mode (deprecated)
 # =================================================================
-# These are needed for actual trading - get from Hyperliquid docs
-# Leave empty for testing configuration
+# These are no longer used in API mode
+ARBITRUM_RPC_URL=
+PRIVATE_KEY=
 CLEARINGHOUSE_ADDRESS=
 EXCHANGE_ADDRESS=
 USDC_ADDRESS=
@@ -42,6 +44,7 @@ AUTO_EXECUTE=false
 # =================================================================
 # OPTIONAL: Trading Configuration
 # =================================================================
+# MAX_POSITION_SIZE is in coin units for the selected symbol
 MAX_POSITION_SIZE=0.1
 LEVERAGE=2.0
 MIN_PROFIT_THRESHOLD=0.02
