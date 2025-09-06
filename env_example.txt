@@ -44,8 +44,9 @@ AUTO_EXECUTE=false
 # =================================================================
 # OPTIONAL: Trading Configuration
 # =================================================================
-# MAX_POSITION_SIZE is in coin units for the selected symbol
-MAX_POSITION_SIZE=0.1
+# MAX_POSITION_SIZE is now a percentage of account balance (0.0-1.0)
+# 0.2 = 20% of account balance, 0.1 = 10% of account balance
+MAX_POSITION_SIZE=0.2
 LEVERAGE=2.0
 MIN_PROFIT_THRESHOLD=0.02
 STOP_LOSS_PERCENTAGE=0.05
