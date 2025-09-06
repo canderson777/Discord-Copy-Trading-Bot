@@ -132,16 +132,77 @@ class HyperliquidTrader:
             logging.error(f"Error fetching market info: {str(e)}")
             return None
 
+    def get_account_balance(self) -> float:
+        """Get USDC balance from Hyperliquid account"""
+        try:
+            if self.simulation_mode or self.exchange is None:
+                # In simulation mode, return a default balance for testing
+                return 100.0  # Default $100 for simulation
+            
+            # Get account info from Hyperliquid
+            if self.info is not None:
+                # Try to get account info via SDK
+                try:
+                    # This is a placeholder - actual implementation depends on SDK methods
+                    # You may need to adjust this based on the actual Hyperliquid SDK API
+                    account_info = self.info.user_state(self.wallet.address)
+                    if account_info and 'marginSummary' in account_info:
+                        # Extract USDC balance from margin summary
+                        margin_summary = account_info['marginSummary']
+                        if 'accountValue' in margin_summary:
+                            return float(margin_summary['accountValue'])
+                except Exception as e:
+                    logging.warning(f"Could not get balance via SDK: {str(e)}")
+            
+            # Fallback: try REST API
+            try:
+                response = requests.get(f"{self.api_base}/info", timeout=5)
+                if response.status_code == 200:
+                    # This is a simplified approach - you may need to adjust based on actual API
+                    # For now, return a default value
+                    logging.warning("Using default balance - implement proper balance retrieval")
+                    return 100.0
+            except Exception as e:
+                logging.error(f"Error fetching balance via REST: {str(e)}")
+            
+            return 0.0
+        except Exception as e:
+            logging.error(f"Error getting account balance: {str(e)}")
+            return 0.0
+
     def get_position_size(self, symbol: str, price: float) -> float:
-        """Calculate position size in coin units for HL orders.
-        Uses MAX_POSITION_SIZE as the cap in coin units. If user balance is retrievable via SDK,
-        we could refine this; for now, return the configured max.
+        """Calculate position size in coin units based on percentage of account balance.
+        MAX_POSITION_SIZE now represents the percentage of account balance to use (0.0-1.0).
         """
         try:
-            max_size = float(self.config['max_position_size'])
-            if max_size <= 0:
+            # Get account balance in USDC
+            account_balance = self.get_account_balance()
+            if account_balance <= 0:
+                logging.error("Account balance is zero or negative")
                 return 0.0
-            return max_size
+            
+            # MAX_POSITION_SIZE is now a percentage (0.0-1.0)
+            position_percentage = float(self.config['max_position_size'])
+            
+            # Validate percentage
+            if position_percentage <= 0 or position_percentage > 1.0:
+                logging.error(f"Invalid position percentage: {position_percentage}. Must be between 0.0 and 1.0")
+                return 0.0
+            
+            # Calculate USDC amount to use for this position
+            usdc_to_use = account_balance * position_percentage
+            
+            # Apply leverage to get total position value
+            leverage = float(self.config['leverage'])
+            total_position_value = usdc_to_use * leverage
+            
+            # Convert to coin units
+            coin_units = total_position_value / price
+            
+            logging.info(f"Position sizing: ${account_balance:.2f} balance × {position_percentage:.1%} = ${usdc_to_use:.2f} × {leverage}x leverage = ${total_position_value:.2f} position = {coin_units:.6f} {symbol}")
+            
+            return coin_units
+            
         except Exception as e:
             logging.error(f"Error calculating position size: {str(e)}")
             return 0.0

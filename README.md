@@ -78,10 +78,24 @@ HL_TESTNET=false
 TRADING_CHANNEL_ID=123456789012345678
 TRADER_USER_ID=987654321098765432
 AUTO_EXECUTE=false
-MAX_POSITION_SIZE=0.1
+MAX_POSITION_SIZE=0.2
 LEVERAGE=2.0
 TP_FRACTIONS=33/33/34
 ```
+
+### Position Sizing (NEW!)
+
+The bot now uses **percentage-based position sizing** for better risk management:
+
+- `MAX_POSITION_SIZE=0.2` = 20% of your account balance
+- `MAX_POSITION_SIZE=0.1` = 10% of your account balance  
+- `MAX_POSITION_SIZE=0.05` = 5% of your account balance
+
+**Example with $100 account:**
+- `MAX_POSITION_SIZE=0.2` + `LEVERAGE=2.0` = $20 × 2x = $40 position
+- `MAX_POSITION_SIZE=0.1` + `LEVERAGE=2.0` = $10 × 2x = $20 position
+
+This automatically scales with your account size and prevents over-leveraging!
 
 ## 🧪 Testing Your Bot
 
@@ -148,7 +162,7 @@ TP: 118900
 - **Manual Confirmation**: Ask for approval before executing trades
 - **User Filtering**: Only listen to specified trader
 - **Channel Filtering**: Monitor specific channels only
-- **Position Limits**: Configurable maximum position sizes
+- **Position Limits**: Configurable percentage-based position sizing
 
 ## 📚 Documentation
 

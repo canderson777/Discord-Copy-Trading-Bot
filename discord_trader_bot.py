@@ -166,7 +166,7 @@ class DiscordTraderBot:
         async def status_command(ctx):
             """Check bot and trader status"""
             active_trades = len(self.trader.active_trades)
-            trading_enabled = self.trader.contracts_loaded
+            trading_enabled = not self.trader.simulation_mode
             
             embed = discord.Embed(
                 title="🤖 Copy Trader Status",
