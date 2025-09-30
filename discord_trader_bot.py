@@ -5,7 +5,7 @@ import re
 import os
 from dotenv import load_dotenv
 import logging
-from copy_trader import HyperliquidTrader
+from copy_trader import LighterTrader
 
 # Load environment variables
 load_dotenv()
@@ -22,8 +22,8 @@ logging.basicConfig(
 
 class DiscordTraderBot:
     def __init__(self):
-        # Initialize the Hyperliquid trader
-        self.trader = HyperliquidTrader()
+        # Initialize the Lighter trader
+        self.trader = LighterTrader()
         
         # Discord bot configuration
         intents = discord.Intents.default()

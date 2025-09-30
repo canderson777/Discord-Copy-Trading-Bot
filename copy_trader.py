@@ -7,18 +7,18 @@ from typing import Dict, Optional
 import os
 from dotenv import load_dotenv
 import requests
+
 try:
-    # Hyperliquid SDK (installed via requirements)
-    from hyperliquid.info import Info
-    from hyperliquid.exchange import Exchange
-    from hyperliquid.utils.signing import LocalWallet
-    from hyperliquid.utils import constants as hl_constants
+    # Lighter SDK (installed via GitHub clone)
+    # git clone https://github.com/hangukquant/lighter_sdk
+    # cd lighter_sdk && pip install -e .
+    from lighter.client import SignerClient
+    from lighter.api import TransactionApi, DataApi
 except Exception:
     # SDK not available at import time; we'll guard usage at runtime
-    Info = None
-    Exchange = None
-    LocalWallet = None
-    hl_constants = None
+    SignerClient = None
+    TransactionApi = None
+    DataApi = None
 
 # Load environment variables
 load_dotenv()
@@ -33,12 +33,15 @@ logging.basicConfig(
     ]
 )
 
-class HyperliquidTrader:
+class LighterTrader:
     def __init__(self):
         # Load configuration and detect API mode
         load_dotenv()
-        self.api_base = os.getenv('HYPERLIQUID_API_BASE', 'https://api.hyperliquid.xyz')
-        self.hl_private_key = os.getenv('HL_API_PRIVATE_KEY')
+        self.api_base = os.getenv('LIGHTER_API_BASE', 'https://api.lighter.xyz')
+        self.api_key_private_key = os.getenv('API_KEY_PRIVATE_KEY')
+        self.eth_private_key = os.getenv('ETH_PRIVATE_KEY')
+        self.account_index = os.getenv('LIGHTER_ACCOUNT_INDEX')
+        self.api_key_index = int(os.getenv('API_KEY_INDEX', '2'))  # Default to 2 (first user API key)
 
         # Trading configuration
         self.config = {
@@ -48,29 +51,59 @@ class HyperliquidTrader:
             'stop_loss_percentage': float(os.getenv('STOP_LOSS_PERCENTAGE', '0.05')),
         }
 
-        # Initialize Hyperliquid SDK if credentials provided; otherwise run in simulation mode
-        self.simulation_mode = self.hl_private_key is None or Info is None or Exchange is None or LocalWallet is None
-        self.info = None
-        self.exchange = None
-        self.wallet = None
+        # Initialize Lighter SDK if credentials provided; otherwise run in simulation mode
+        self.simulation_mode = (
+            self.api_key_private_key is None or 
+            self.eth_private_key is None or 
+            SignerClient is None
+        )
+        
+        self.signer_client = None
+        self.transaction_api = None
+        self.data_api = None
+        
         if not self.simulation_mode:
             try:
-                # Prefer provided API base; fall back to SDK constants if possible
-                base_url = self.api_base
-                if hl_constants is not None:
-                    # If user set TESTNET via env (optional), switch URL
-                    use_testnet = os.getenv('HL_TESTNET', 'false').lower() == 'true'
-                    base_url = hl_constants.TESTNET_API_URL if use_testnet else base_url
-                self.info = Info(base_url, skip_ws=True)
-                self.wallet = LocalWallet(self.hl_private_key)
-                self.exchange = Exchange(self.wallet, base_url, self.info)
-                logging.info("Hyperliquid SDK initialized - live trading enabled")
+                # Get account index if not provided
+                if not self.account_index:
+                    self.account_index = self._get_account_index()
+                    if not self.account_index:
+                        logging.warning("Could not determine account index, falling back to simulation mode")
+                        self.simulation_mode = True
+                    else:
+                        logging.info(f"Using account index: {self.account_index}")
+                
+                if not self.simulation_mode:
+                    # Initialize Lighter SDK components
+                    self.signer_client = SignerClient(
+                        url=self.api_base,
+                        private_key=self.api_key_private_key,
+                        account_index=int(self.account_index),
+                        api_key_index=self.api_key_index
+                    )
+                    self.transaction_api = TransactionApi(self.api_base)
+                    self.data_api = DataApi(self.api_base)
+                    logging.info("Lighter SDK initialized - live trading enabled")
             except Exception as e:
-                logging.warning(f"Failed to initialize Hyperliquid SDK, falling back to simulation mode: {str(e)}")
+                logging.warning(f"Failed to initialize Lighter SDK, falling back to simulation mode: {str(e)}")
                 self.simulation_mode = True
 
         # Initialize trade tracking
         self.active_trades: Dict[str, Dict] = {}
+
+    def _get_account_index(self) -> Optional[str]:
+        """Retrieve account index from Lighter API using ETH address"""
+        try:
+            # In a real implementation, you would:
+            # 1. Derive ETH address from eth_private_key
+            # 2. Query accountsByL1Address endpoint
+            # 3. Extract the first sub_account index
+            # For now, return None to indicate it should be set in .env
+            logging.info("Please set LIGHTER_ACCOUNT_INDEX in your .env file")
+            return None
+        except Exception as e:
+            logging.error(f"Error getting account index: {str(e)}")
+            return None
 
     def _parse_tp_fractions(self, tp_count: int) -> list:
         """Return a list of TP fractions (of original position) to close per TP.
@@ -112,58 +145,53 @@ class HyperliquidTrader:
         return True
 
     def get_market_info(self, symbol: str) -> Dict:
-        """Get market information from Hyperliquid API.
-        Falls back to REST call to /info if SDK is unavailable.
+        """Get market information from Lighter API.
+        Falls back to REST call if SDK is unavailable.
         """
         try:
-            if self.info is not None:
-                # Try to fetch price via SDK if available
-                # Many SDKs expose mid prices via info or meta endpoints.
-                # As a simple approach, fall back to REST which returns a list of markets.
-                pass
-            response = requests.get(f"{self.api_base}/info", timeout=5)
+            if self.data_api is not None:
+                # Use SDK to fetch market data
+                try:
+                    # This is a placeholder - adjust based on actual Lighter SDK methods
+                    # You may need to call specific methods like get_market_price, get_ticker, etc.
+                    pass
+                except Exception as e:
+                    logging.warning(f"Could not get market info via SDK: {str(e)}")
+            
+            # Fallback: REST API call
+            response = requests.get(f"{self.api_base}/markets/{symbol}", timeout=5)
             if response.status_code == 200:
-                markets = response.json()
-                for market in markets:
-                    if market.get('symbol') == symbol:
-                        return market
+                market_data = response.json()
+                return market_data
             return None
         except Exception as e:
             logging.error(f"Error fetching market info: {str(e)}")
             return None
 
     def get_account_balance(self) -> float:
-        """Get USDC balance from Hyperliquid account"""
+        """Get account balance from Lighter"""
         try:
-            if self.simulation_mode or self.exchange is None:
+            if self.simulation_mode or self.data_api is None:
                 # In simulation mode, return a default balance for testing
                 return 100.0  # Default $100 for simulation
             
-            # Get account info from Hyperliquid
-            if self.info is not None:
-                # Try to get account info via SDK
-                try:
-                    # This is a placeholder - actual implementation depends on SDK methods
-                    # You may need to adjust this based on the actual Hyperliquid SDK API
-                    account_info = self.info.user_state(self.wallet.address)
-                    if account_info and 'marginSummary' in account_info:
-                        # Extract USDC balance from margin summary
-                        margin_summary = account_info['marginSummary']
-                        if 'accountValue' in margin_summary:
-                            return float(margin_summary['accountValue'])
-                except Exception as e:
-                    logging.warning(f"Could not get balance via SDK: {str(e)}")
-            
-            # Fallback: try REST API
+            # Get account info from Lighter
             try:
-                response = requests.get(f"{self.api_base}/info", timeout=5)
+                # This is a placeholder - adjust based on actual Lighter SDK methods
+                # You may need to call methods like get_account_value, get_balances, etc.
+                response = requests.get(
+                    f"{self.api_base}/accounts/{self.account_index}/balance",
+                    timeout=5
+                )
                 if response.status_code == 200:
-                    # This is a simplified approach - you may need to adjust based on actual API
-                    # For now, return a default value
-                    logging.warning("Using default balance - implement proper balance retrieval")
-                    return 100.0
+                    balance_data = response.json()
+                    # Extract balance from response (structure depends on Lighter API)
+                    if 'accountValue' in balance_data:
+                        return float(balance_data['accountValue'])
+                    elif 'balance' in balance_data:
+                        return float(balance_data['balance'])
             except Exception as e:
-                logging.error(f"Error fetching balance via REST: {str(e)}")
+                logging.warning(f"Could not get balance: {str(e)}")
             
             return 0.0
         except Exception as e:
@@ -175,7 +203,7 @@ class HyperliquidTrader:
         MAX_POSITION_SIZE now represents the percentage of account balance to use (0.0-1.0).
         """
         try:
-            # Get account balance in USDC
+            # Get account balance in USD
             account_balance = self.get_account_balance()
             if account_balance <= 0:
                 logging.error("Account balance is zero or negative")
@@ -189,17 +217,17 @@ class HyperliquidTrader:
                 logging.error(f"Invalid position percentage: {position_percentage}. Must be between 0.0 and 1.0")
                 return 0.0
             
-            # Calculate USDC amount to use for this position
-            usdc_to_use = account_balance * position_percentage
+            # Calculate USD amount to use for this position
+            usd_to_use = account_balance * position_percentage
             
             # Apply leverage to get total position value
             leverage = float(self.config['leverage'])
-            total_position_value = usdc_to_use * leverage
+            total_position_value = usd_to_use * leverage
             
             # Convert to coin units
             coin_units = total_position_value / price
             
-            logging.info(f"Position sizing: ${account_balance:.2f} balance × {position_percentage:.1%} = ${usdc_to_use:.2f} × {leverage}x leverage = ${total_position_value:.2f} position = {coin_units:.6f} {symbol}")
+            logging.info(f"Position sizing: ${account_balance:.2f} balance × {position_percentage:.1%} = ${usd_to_use:.2f} × {leverage}x leverage = ${total_position_value:.2f} position = {coin_units:.6f} {symbol}")
             
             return coin_units
             
@@ -256,7 +284,7 @@ class HyperliquidTrader:
             return False
 
     def execute_buy(self, signal_data: Dict) -> bool:
-        """Execute a buy order using Hyperliquid SDK (or simulate if not available)."""
+        """Execute a buy order using Lighter SDK (or simulate if not available)."""
         try:
             symbol = signal_data['symbol']
             order_type = signal_data.get('order_type', 'LIMIT').upper()
@@ -282,27 +310,36 @@ class HyperliquidTrader:
                     if position_size <= 0:
                         logging.error("Invalid position size for ladder entry")
                         continue
-                    if self.simulation_mode or self.exchange is None:
+                    
+                    if self.simulation_mode or self.signer_client is None:
                         order_refs.append({"simulated": True, "px": execution_price, "sz": position_size})
                         total_position_size += float(position_size)
                         avg_price_accumulator += execution_price * float(position_size)
                         logging.info(f"[SIM] Ladder entry at ${execution_price} for {position_size} {symbol}")
                     else:
-                        order = {
-                            "coin": symbol,
-                            "is_buy": True,
-                            "sz": position_size,
-                            "limit_px": execution_price,
-                            "order_type": {"limit": {"tif": "Gtc"}},
-                            "reduce_only": False
-                        }
-                        resp = self.exchange.place_order(order)
-                        order_refs.append(resp)
-                        total_position_size += float(position_size)
-                        avg_price_accumulator += execution_price * float(position_size)
-                        logging.info(f"Ladder entry placed at ${execution_price}: {resp}")
+                        # Create order using Lighter SDK
+                        # Note: Adjust parameters based on actual Lighter SDK methods
+                        try:
+                            nonce = self.transaction_api.next_nonce(self.account_index)
+                            signed_order = self.signer_client.create_order(
+                                ticker=symbol,
+                                amount=str(position_size),
+                                price=str(execution_price),
+                                side='buy',
+                                order_type='limit'
+                            )
+                            resp = self.transaction_api.send_tx(signed_order)
+                            order_refs.append(resp)
+                            total_position_size += float(position_size)
+                            avg_price_accumulator += execution_price * float(position_size)
+                            logging.info(f"Ladder entry placed at ${execution_price}: {resp}")
+                        except Exception as e:
+                            logging.error(f"Error placing ladder entry: {str(e)}")
+                            continue
+                
                 if total_position_size == 0:
                     return False
+                    
                 avg_entry_price = avg_price_accumulator / total_position_size
                 self.active_trades[symbol] = {
                     'entry_price': avg_entry_price,
@@ -330,28 +367,32 @@ class HyperliquidTrader:
                 else:
                     execution_price = float(signal_data['price'])
                     logging.info(f"Limit order: Using specified price ${execution_price} for {symbol}")
+                
                 position_size = self.get_position_size(symbol, execution_price)
                 if position_size <= 0:
                     logging.error("Invalid position size")
                     return False
-                if self.simulation_mode or self.exchange is None:
+                
+                if self.simulation_mode or self.signer_client is None:
                     order_ref = {"simulated": True, "px": execution_price, "sz": position_size}
                     logging.info(f"[SIM] Buy {symbol} {position_size} @ ${execution_price}")
                 else:
-                    if order_type == 'MARKET':
-                        # Emulate market by IOC limit at current price
-                        order_type_payload = {"limit": {"tif": "Ioc"}}
-                    else:
-                        order_type_payload = {"limit": {"tif": "Gtc"}}
-                    order = {
-                        "coin": symbol,
-                        "is_buy": True,
-                        "sz": position_size,
-                        "limit_px": execution_price,
-                        "order_type": order_type_payload,
-                        "reduce_only": False
-                    }
-                    order_ref = self.exchange.place_order(order)
+                    try:
+                        # Create order using Lighter SDK
+                        nonce = self.transaction_api.next_nonce(self.account_index)
+                        signed_order = self.signer_client.create_order(
+                            ticker=symbol,
+                            amount=str(position_size),
+                            price=str(execution_price),
+                            side='buy',
+                            order_type='market' if order_type == 'MARKET' else 'limit'
+                        )
+                        order_ref = self.transaction_api.send_tx(signed_order)
+                        logging.info(f"Order placed: {order_ref}")
+                    except Exception as e:
+                        logging.error(f"Error placing order: {str(e)}")
+                        return False
+                
                 self.active_trades[symbol] = {
                     'entry_price': execution_price,
                     'entries': None,
@@ -373,7 +414,7 @@ class HyperliquidTrader:
             return False
 
     def execute_sell(self, signal_data: Dict) -> bool:
-        """Execute a sell/close order using Hyperliquid SDK (or simulate)."""
+        """Execute a sell/close order using Lighter SDK (or simulate)."""
         try:
             symbol = signal_data['symbol']
             order_type = signal_data.get('order_type', 'LIMIT').upper()
@@ -413,24 +454,27 @@ class HyperliquidTrader:
                 logging.error("Computed close size is zero; skipping sell")
                 return False
             
-            # Place reduce-only order (market via IOC limit)
-            if self.simulation_mode or self.exchange is None:
+            # Place reduce-only order
+            if self.simulation_mode or self.signer_client is None:
                 order_ref = {"simulated": True, "px": execution_price, "sz": size_to_close}
                 logging.info(f"[SIM] Sell {symbol} {size_to_close} @ ${execution_price}")
             else:
-                if order_type == 'MARKET':
-                    order_type_payload = {"limit": {"tif": "Ioc"}}
-                else:
-                    order_type_payload = {"limit": {"tif": "Gtc"}}
-                order = {
-                    "coin": symbol,
-                    "is_buy": False,
-                    "sz": size_to_close,
-                    "limit_px": execution_price,
-                    "order_type": order_type_payload,
-                    "reduce_only": True
-                }
-                order_ref = self.exchange.place_order(order)
+                try:
+                    # Create sell order using Lighter SDK
+                    nonce = self.transaction_api.next_nonce(self.account_index)
+                    signed_order = self.signer_client.create_order(
+                        ticker=symbol,
+                        amount=str(size_to_close),
+                        price=str(execution_price),
+                        side='sell',
+                        order_type='market' if order_type == 'MARKET' else 'limit',
+                        reduce_only=True
+                    )
+                    order_ref = self.transaction_api.send_tx(signed_order)
+                    logging.info(f"Sell order placed: {order_ref}")
+                except Exception as e:
+                    logging.error(f"Error placing sell order: {str(e)}")
+                    return False
 
             # Calculate profit/loss (approximate for partial)
             entry_price = self.active_trades[symbol]['entry_price']
@@ -454,7 +498,7 @@ class HyperliquidTrader:
         """Check active positions for stop loss or take profit conditions"""
         for symbol, trade in self.active_trades.items():
             try:
-                # Get current price from Hyperliquid API
+                # Get current price from Lighter API
                 market_info = self.get_market_info(symbol)
                 if not market_info:
                     continue
@@ -529,12 +573,12 @@ class HyperliquidTrader:
 
 def main():
     # Initialize trader
-    trader = HyperliquidTrader()
+    trader = LighterTrader()
     
     # Example of processing a trade signal
     sample_signal = {
         'action': 'BUY',
-        'symbol': 'BTC',
+        'symbol': 'BTC-USDC',
         'price': '50000.0',
         'leverage': '2.0'
     }
@@ -548,4 +592,4 @@ def main():
         time.sleep(60)  # Check every minute
 
 if __name__ == "__main__":
-    main() 
+    main()

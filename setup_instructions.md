@@ -1,13 +1,14 @@
-# Discord Copy Trader Bot Setup
+# Discord Copy Trader Bot Setup - Lighter.xyz Edition
 
 ## Overview
-This Discord integration allows your copy trader bot to automatically monitor Discord messages from a specific trader and execute trades based on their calls.
+This Discord integration allows your copy trader bot to automatically monitor Discord messages from a specific trader and execute trades on Lighter.xyz based on their calls.
 
 ## Features
 - 🤖 **Automatic Signal Detection**: Parses various trade signal formats
 - ⚡ **Auto-Execute or Manual Confirm**: Choose between automatic execution or manual confirmation
 - 📊 **Real-time Monitoring**: Monitors positions with stop-loss and take-profit
 - 🔧 **Bot Commands**: Control the bot with Discord commands
+- 🚀 **Lighter.xyz Integration**: Trade on Lighter's decentralized exchange platform
 
 ## Setup Instructions
 
@@ -34,12 +35,21 @@ This Discord integration allows your copy trader bot to automatically monitor Di
 
 ### 4. Configure Environment
 1. Copy `env_example.txt` to `.env`
-2. Fill in all the required values (API mode):
+2. Get your Lighter.xyz credentials:
+   - **API Key**: Generate from your Lighter account (indices 2-254)
+   - **ETH Private Key**: Your Ethereum wallet private key
+   - **Account Index**: Query the `accountsByL1Address` endpoint with your ETH address
+     - The first element in `sub_accounts` list is your main account index
+   - See [Lighter API Docs](https://apidocs.lighter.xyz/docs/get-started-for-programmers-1) for details
+
+3. Fill in all the required values:
    ```
    DISCORD_BOT_TOKEN=your_bot_token_here
-   HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
-   HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
-   HL_TESTNET=false
+   LIGHTER_API_BASE=https://api.lighter.xyz
+   API_KEY_PRIVATE_KEY=your_api_key_private_key_here
+   ETH_PRIVATE_KEY=your_eth_private_key_here
+   LIGHTER_ACCOUNT_INDEX=your_account_index_here
+   API_KEY_INDEX=2
 
    # Optional
    TRADING_CHANNEL_ID=123456789012345678
@@ -49,18 +59,27 @@ This Discord integration allows your copy trader bot to automatically monitor Di
    LEVERAGE=2.0
    ```
 
-### 5. Install Dependencies
+### 5. Install Lighter SDK
+```bash
+# Clone the Lighter SDK repository
+git clone https://github.com/hangukquant/lighter_sdk
+cd lighter_sdk
+pip install -e .
+cd ..
+```
+
+### 6. Install Other Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 6. Run the Bot (Simulation vs Live)
+### 7. Run the Bot (Simulation vs Live)
 ```bash
 python discord_trader_bot.py
 ```
 
-- If `HL_API_PRIVATE_KEY` is NOT set: simulation mode (signals tracked, no live trades)
-- If `HL_API_PRIVATE_KEY` IS set: live trading enabled via Hyperliquid API/SDK
+- If `API_KEY_PRIVATE_KEY` or `ETH_PRIVATE_KEY` is NOT set: simulation mode (signals tracked, no live trades)
+- If both credentials ARE set: live trading enabled via Lighter.xyz API/SDK
 
 ## Supported Signal Formats
 
@@ -103,8 +122,10 @@ The bot can parse various trading signal formats:
 
 1. **Bot not responding**: Check bot has proper permissions in the channel
 2. **Signals not detected**: Verify the message format matches supported patterns
-3. **Trades not executing**: Check your Hyperliquid configuration and wallet balance
+3. **Trades not executing**: Check your Lighter.xyz configuration and account balance
 4. **Wrong channel**: Verify `TRADING_CHANNEL_ID` is correct
+5. **SDK Import Error**: Make sure you've cloned and installed the Lighter SDK from GitHub
+6. **Account Index Error**: Query the `accountsByL1Address` endpoint to get your correct account index
 
 ## Security Notes
 

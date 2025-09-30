@@ -2,16 +2,25 @@
 # DO NOT share your .env file - it contains sensitive information!
 
 # =================================================================
-# REQUIRED: Hyperliquid API Configuration (Live Trading)
+# REQUIRED: Lighter.xyz API Configuration (Live Trading)
 # =================================================================
-# Hyperliquid API base
-HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
+# Lighter API base URL
+LIGHTER_API_BASE=https://api.lighter.xyz
 
-# API wallet private key for signing requests to the Exchange endpoint
-# (Keep secret; this is NOT your Discord token)
-HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
-# Set true to use testnet if your SDK supports it
-HL_TESTNET=false
+# API key private key for signing transactions
+# Generate this from your Lighter account (indices 2-254 available)
+API_KEY_PRIVATE_KEY=your_api_key_private_key_here
+
+# Your Ethereum wallet private key
+ETH_PRIVATE_KEY=your_eth_private_key_here
+
+# Your Lighter account index (find via accountsByL1Address endpoint)
+# First element in sub_accounts list is your main account index
+LIGHTER_ACCOUNT_INDEX=your_account_index_here
+
+# API key index (default: 2, which is the first user API key)
+# Indices 0 and 1 are reserved for desktop and mobile
+API_KEY_INDEX=2
 
 # =================================================================
 # REQUIRED: Discord Bot Configuration  
@@ -20,9 +29,9 @@ HL_TESTNET=false
 DISCORD_BOT_TOKEN=your_discord_bot_token_here
 
 # =================================================================
-# OPTIONAL: Legacy EVM Mode (deprecated)
+# OPTIONAL: Legacy Configuration (deprecated - from Hyperliquid version)
 # =================================================================
-# These are no longer used in API mode
+# These are no longer used
 ARBITRUM_RPC_URL=
 PRIVATE_KEY=
 CLEARINGHOUSE_ADDRESS=

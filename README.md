@@ -1,6 +1,6 @@
-# 🤖 Discord Copy Trader Bot
+# 🤖 Discord Copy Trader Bot - Lighter.xyz Edition
 
-An advanced Discord bot that automatically detects and executes cryptocurrency trading signals from Discord messages. Perfect for copy trading from professional traders with sophisticated multi-line signal formats.
+An advanced Discord bot that automatically detects and executes cryptocurrency trading signals from Discord messages on Lighter.xyz. Perfect for copy trading from professional traders with sophisticated multi-line signal formats.
 
 ## ✨ Features
 
@@ -10,6 +10,7 @@ An advanced Discord bot that automatically detects and executes cryptocurrency t
 - 📊 **Professional Format Support** - Handles sophisticated trading signals with leverage, SL, and TP
 - 🔒 **Safe Testing Mode** - Test signal detection without executing real trades
 - 📝 **Comprehensive Logging** - Full audit trail of all detected signals and actions
+- 🚀 **Lighter.xyz Integration** - Trade on Lighter's decentralized exchange platform
 
 ## 🚀 Quick Start
 
@@ -19,22 +20,35 @@ git clone https://github.com/canderson777/Discord-Copy-Trader-Bot.git
 cd discord-copy-trader-bot
 ```
 
-### 2. Install Dependencies
+### 2. Install Lighter SDK
+```bash
+# Clone the Lighter SDK repository
+git clone https://github.com/hangukquant/lighter_sdk
+cd lighter_sdk
+pip install -e .
+cd ..
+```
+
+### 3. Install Other Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configuration
+### 4. Configuration
 1. Copy `env_example.txt` to `.env`
-2. Fill in your Discord bot token and other settings
-3. Get your Discord bot token from [Discord Developer Portal](https://discord.com/developers/applications)
+2. Get your Lighter.xyz credentials:
+   - **API Key Private Key**: Generate from your Lighter account
+   - **ETH Private Key**: Your Ethereum wallet private key
+   - **Account Index**: Query `accountsByL1Address` endpoint
+   - See [Lighter API Docs](https://apidocs.lighter.xyz/docs/get-started-for-programmers-1)
+3. Fill in your Discord bot token from [Discord Developer Portal](https://discord.com/developers/applications)
 
-### 4. Test Configuration
+### 5. Test Configuration
 ```bash
 python test_config.py
 ```
 
-### 5. Run the Bot
+### 6. Run the Bot
 ```bash
 python discord_trader_bot.py
 ```
@@ -64,13 +78,14 @@ SHORT SOL 150
 
 ## 🔧 Configuration
 
-### Required Settings (API Mode)
+### Required Settings
 ```env
 DISCORD_BOT_TOKEN=your_discord_bot_token
-HYPERLIQUID_API_BASE=https://api.hyperliquid.xyz
-HL_API_PRIVATE_KEY=your_hyperliquid_api_wallet_private_key
-# Optional: set to true to use testnet endpoints if supported
-HL_TESTNET=false
+LIGHTER_API_BASE=https://api.lighter.xyz
+API_KEY_PRIVATE_KEY=your_api_key_private_key_here
+ETH_PRIVATE_KEY=your_eth_private_key_here
+LIGHTER_ACCOUNT_INDEX=your_account_index_here
+API_KEY_INDEX=2
 ```
 
 ### Optional Settings
@@ -103,7 +118,7 @@ This automatically scales with your account size and prevents over-leveraging!
 ```bash
 python test_config.py
 ```
-This will verify your Discord token and Hyperliquid API connectivity. If `HL_API_PRIVATE_KEY` is not set, the bot runs in simulation mode (no live trades).
+This will verify your Discord token and Lighter.xyz API connectivity. If `API_KEY_PRIVATE_KEY` or `ETH_PRIVATE_KEY` is not set, the bot runs in simulation mode (no live trades).
 
 ### Step 2: Test Signal Parsing
 ```bash
