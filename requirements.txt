@@ -1,5 +1,7 @@
-web3==6.11.3
 python-dotenv==1.0.0
 requests==2.31.0
 discord.py==2.3.2
-hyperliquid-python-sdk
+# Lighter SDK - Install from GitHub:
+# git clone https://github.com/hangukquant/lighter_sdk
+# cd lighter_sdk
+# pip install -e .
